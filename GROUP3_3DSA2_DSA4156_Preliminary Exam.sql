@@ -115,3 +115,91 @@ GROUP BY store_name, YYYYMM, returned_or_open WITH ROLLUP;
 
 -- (c) one insight a store manager should take from the table
 -- Store 2 has lower returned-late rates than Store 1 of all months.
+
+-- Q2
+
+-- (2a) 
+
+SELECT dm.movie_category, 
+	ROUND(AVG(fr.is_late) * 100, 2) AS late_pct, 
+    ROUND(AVG(fr.allowed_days), 2) AS avg_allowed_days,
+    COUNT(*) AS returned_rentals
+    FROM fact_rental_lifecycle fr
+	JOIN sakila_dw.dim_movie dm ON dm.movie_key = fr.movie_key
+	WHERE fr.is_returned = 1
+	GROUP BY dm.movie_category
+	ORDER BY late_pct DESC;
+
+-- (2a) the worst and best categories, with their late percentages;
+    -- The worst category is Sports with 50.43% of late return rentals. 
+    -- Travel is the best at 36.15%. 
+
+-- (2b)
+
+SELECT fr.allowed_days,
+       ROUND(AVG(fr.is_late) * 100, 2) AS late_pct,
+       COUNT(*) AS returned_rentals
+FROM fact_rental_lifecycle fr
+JOIN sakila_dw.dim_movie dm ON dm.movie_key = fr.movie_key
+WHERE fr.is_returned = 1 AND dm.movie_category = 'Sports'
+GROUP BY fr.allowed_days
+ORDER BY fr.allowed_days;
+
+-- (2b) what the drill-down reveals about why the worst category is the worst;
+	-- Shorter rental periods make lateness worse. In Sports, late returns drop from 69.85% at 3 allowed days to 28.18% at 7 days.
+    -- Sports gives fewer days on average (4.74 vs Travel’s 5.47), so more of its rentals come back late.
+    
+-- (2c) whether a manager should treat the category itself as the problem, and why.
+
+-- all category pct for allowed days
+SELECT fr.allowed_days,
+       ROUND(AVG(fr.is_late) * 100, 2) AS late_pct,
+       COUNT(*) AS returned_rentals
+FROM sakila_exam.fact_rental_lifecycle fr
+WHERE fr.is_returned = 1 
+GROUP BY fr.allowed_days
+ORDER BY fr.allowed_days;
+
+-- travel late_pct and allowed days (best category)
+SELECT fr.allowed_days,
+       ROUND(AVG(fr.is_late) * 100, 2) AS late_pct,
+       COUNT(*) AS returned_rentals
+FROM fact_rental_lifecycle fr
+JOIN sakila_dw.dim_movie dm ON dm.movie_key = fr.movie_key
+WHERE fr.is_returned = 1 AND dm.movie_category = 'Travel'
+GROUP BY fr.allowed_days
+ORDER BY fr.allowed_days;
+
+-- (2c) 
+	-- No, the category itself (worst: Sports) shouldn’t be treated as the problem.
+	-- Lateness follows the rental period in every category. Across all films, 
+	-- late returns drop from 66.87% at 3 allowed days to 23.34% at 7 days. 
+    -- Even Travel, the best category, is 62.50% late at 3 days, close to Sports’ 69.85%.
+	-- The real problem is the short rental period, not the category. 
+    -- A manager should extend short rental periods or send a reminder before the due date instead of blaming Sports.
+
+-- Q3
+
+SELECT fr.allowed_days,
+       ROUND(100 * SUM(CASE WHEN ds.store_id = 1 THEN fr.is_late ELSE 0 END)
+			 /SUM(CASE WHEN ds.store_id = 1 THEN 1 ELSE 0 END), 2) AS store1_lethbridge_late_pct,
+       ROUND(100 * SUM(CASE WHEN ds.store_id = 2 THEN fr.is_late ELSE 0 END)
+		     /SUM(CASE WHEN ds.store_id = 2 THEN 1 ELSE 0 END), 2) AS store2_woodridge_late_pct
+FROM sakila_exam.fact_rental_lifecycle fr
+JOIN sakila_dw.dim_store ds ON ds.store_key = fr.store_key
+WHERE fr.is_returned = 1
+GROUP BY fr.allowed_days
+ORDER BY fr.allowed_days;
+
+-- (3a)
+	-- 3 days: Store 1 is 67.86% late and Store 2 is 65.68%
+    -- 7 days: Store 1 is 23.59% and Store 2 is 23.02%
+
+-- (3b)
+	-- No. Both stores are almost the same at every rental period, never more than about 3% apart.
+    
+-- (3c)
+	-- Change rental terms.
+	-- Both stores have almost the same late % at every rental period.
+	-- Late return drops from about 65-67% in 3 days to about 23% in 7 days. 
+	-- Short rental periods cause lateness, management should give longer rental periods or send reminders before the due date.
